@@ -7,7 +7,7 @@
 // Настройки
 $apiKey = 'YOUR_API_KEY'; // Замените на ваш API ключ от smtp.bz
 $fromEmail = 'info@mycompany.com'; // Замените на ваш email домен
-$toEmail = 'fatemax@list.ru';
+$toEmails = ['fatemax@list.ru', 'fatemax2@list.ru'];
 
 // Устанавливаем заголовки для JSON ответа
 header('Content-Type: application/json');
@@ -21,10 +21,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // Получаем и очищаем данные из формы
 $name = isset($_POST['name']) ? trim(htmlspecialchars($_POST['name'])) : '';
 $apartment = isset($_POST['apartment']) ? trim(htmlspecialchars($_POST['apartment'])) : '';
+$contact = isset($_POST['contact']) ? trim(htmlspecialchars($_POST['contact'])) : '';
 $message = isset($_POST['message']) ? trim(htmlspecialchars($_POST['message'])) : '';
 
 // Валидация
-if (empty($name) || empty($apartment) || empty($message)) {
+if (empty($name) || empty($apartment) || empty($contact) || empty($message)) {
     echo json_encode(['success' => false, 'message' => 'Все поля обязательны для заполнения']);
     exit;
 }
@@ -57,6 +58,10 @@ $htmlBody = "
             <div class='value'>" . $apartment . "</div>
         </div>
         <div class='field'>
+            <div class='label'>Как связаться:</div>
+            <div class='value'>" . $contact . "</div>
+        </div>
+        <div class='field'>
             <div class='label'>Проблема/Предложение:</div>
             <div class='value'>" . nl2br($message) . "</div>
         </div>
@@ -69,53 +74,69 @@ $htmlBody = "
 $textBody = "Новая заявка с сайта\n\n" .
             "Имя: " . $name . "\n" .
             "Номер квартиры: " . $apartment . "\n" .
+            "Как связаться: " . $contact . "\n" .
             "Проблема/Предложение:\n" . $message;
 
-// Инициализируем cURL
-$curl = curl_init();
+// Отправляем письмо каждому получателю
+$successCount = 0;
+$failures = [];
 
-// Данные для отправки
-$postData = [
-    'subject' => 'Заявка от ' . $name . ' (кв. ' . $apartment . ')',
-    'name' => $name,
-    'html' => $htmlBody,
-    'text' => $textBody,
-    'from' => $fromEmail,
-    'to' => $toEmail,
-    'to_name' => 'Администратор'
-];
+foreach ($toEmails as $toEmail) {
+    // Инициализируем cURL
+    $curl = curl_init();
 
-curl_setopt_array($curl, [
-    CURLOPT_URL => "https://api.smtp.bz/v1/smtp/send",
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT => 30,
-    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-    CURLOPT_CUSTOMREQUEST => "POST",
-    CURLOPT_HTTPHEADER => [
-        "Authorization: " . $apiKey,
-        "Content-Type: application/x-www-form-urlencoded"
-    ],
-    CURLOPT_POSTFIELDS => http_build_query($postData)
-]);
+    // Данные для отправки
+    $postData = [
+        'subject' => 'Заявка от ' . $name . ' (кв. ' . $apartment . ')',
+        'name' => $name,
+        'html' => $htmlBody,
+        'text' => $textBody,
+        'from' => $fromEmail,
+        'to' => $toEmail,
+        'to_name' => 'Администратор'
+    ];
 
-// Выполняем запрос
-$response = curl_exec($curl);
-$err = curl_error($curl);
-$httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    curl_setopt_array($curl, [
+        CURLOPT_URL => "https://api.smtp.bz/v1/smtp/send",
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_CUSTOMREQUEST => "POST",
+        CURLOPT_HTTPHEADER => [
+            "Authorization: " . $apiKey,
+            "Content-Type: application/x-www-form-urlencoded"
+        ],
+        CURLOPT_POSTFIELDS => http_build_query($postData)
+    ]);
 
-curl_close($curl);
+    // Выполняем запрос
+    $response = curl_exec($curl);
+    $err = curl_error($curl);
+    $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
 
-// Обрабатываем результат
-if ($err) {
-    echo json_encode(['success' => false, 'message' => 'cURL Error: ' . $err]);
-} else {
-    $result = json_decode($response, true);
-    
-    if ($httpCode >= 200 && $httpCode < 300) {
-        echo json_encode(['success' => true, 'message' => 'Письмо успешно отправлено']);
+    curl_close($curl);
+
+    // Обрабатываем результат
+    if ($err) {
+        $failures[] = $toEmail . ': cURL Error: ' . $err;
     } else {
-        $errorMsg = isset($result['message']) ? $result['message'] : 'Ошибка при отправке письма';
-        echo json_encode(['success' => false, 'message' => $errorMsg]);
+        $result = json_decode($response, true);
+        
+        if ($httpCode >= 200 && $httpCode < 300) {
+            $successCount++;
+        } else {
+            $errorMsg = isset($result['message']) ? $result['message'] : 'Ошибка при отправке письма';
+            $failures[] = $toEmail . ': ' . $errorMsg;
+        }
     }
+}
+
+// Возвращаем результат
+if ($successCount > 0 && empty($failures)) {
+    echo json_encode(['success' => true, 'message' => 'Письмо успешно отправлено']);
+} elseif ($successCount > 0) {
+    echo json_encode(['success' => true, 'message' => 'Письмо отправлено частично. Ошибки: ' . implode(', ', $failures)]);
+} else {
+    echo json_encode(['success' => false, 'message' => 'Ошибка при отправке: ' . implode(', ', $failures)]);
 }
 ?>
