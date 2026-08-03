@@ -9,6 +9,10 @@ $apiKey = 'YOUR_API_KEY'; // Замените на ваш API ключ от smtp
 $fromEmail = 'info@mycompany.com'; // Замените на ваш email домен
 $toEmails = ['fatemax@list.ru', 'fatemax2@list.ru'];
 
+// Настройки Telegram
+$telegramToken = 'YOUR_BOT_TOKEN'; // Замените на токен вашего бота от @BotFather
+$telegramChatIds = ['USER_ID_1', 'USER_ID_2']; // Замените на ID пользователей (числа или строки)
+
 // Устанавливаем заголовки для JSON ответа
 header('Content-Type: application/json');
 
@@ -138,5 +142,45 @@ if ($successCount > 0 && empty($failures)) {
     echo json_encode(['success' => true, 'message' => 'Письмо отправлено частично. Ошибки: ' . implode(', ', $failures)]);
 } else {
     echo json_encode(['success' => false, 'message' => 'Ошибка при отправке: ' . implode(', ', $failures)]);
+}
+
+// Отправка уведомления в Telegram
+if (!empty($telegramToken) && $telegramToken !== 'YOUR_BOT_TOKEN' && !empty($telegramChatIds)) {
+    $telegramMessage = "📩 *Новая заявка с сайта*\n\n" .
+                       "👤 *Имя:* " . $name . "\n" .
+                       "🏠 *Номер квартиры:* " . $apartment . "\n" .
+                       "📞 *Как связаться:* " . $contact . "\n" .
+                       "📝 *Проблема/Предложение:*\n" . $message;
+    
+    foreach ($telegramChatIds as $chatId) {
+        if (empty($chatId) || $chatId === 'USER_ID_1' || $chatId === 'USER_ID_2') {
+            continue; // Пропускаем заглушки
+        }
+        
+        $tgCurl = curl_init();
+        
+        $tgData = [
+            'chat_id' => $chatId,
+            'text' => $telegramMessage,
+            'parse_mode' => 'Markdown'
+        ];
+        
+        curl_setopt_array($tgCurl, [
+            CURLOPT_URL => "https://api.telegram.org/bot" . $telegramToken . "/sendMessage",
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => http_build_query($tgData)
+        ]);
+        
+        $tgResponse = curl_exec($tgCurl);
+        $tgErr = curl_error($tgCurl);
+        curl_close($tgCurl);
+        
+        // Логируем ошибки Telegram (можно расширить обработку при необходимости)
+        if ($tgErr) {
+            error_log("Telegram Error for chat {$chatId}: " . $tgErr);
+        }
+    }
 }
 ?>
