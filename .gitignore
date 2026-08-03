@@ -1,0 +1,1 @@
+Nothing needs to be added to the .gitignore file since the changes only include source files (index.html, send.php) without any build artifacts, dependencies, or temporary files that should be ignored.
